@@ -167,6 +167,7 @@ audio{width:100%; margin-top:10px; height:36px}
         </label>
         <label><input type="checkbox" id="loop"> Loop sentence</label>
         <label><input type="checkbox" id="autoNext" checked> Auto-advance on ≥80%</label>
+        <label title="Exact word match only — no near-miss, homophone or contraction forgiveness"><input type="checkbox" id="strict"> Strict scoring</label>
         <label>Sub sync
           <button id="offMinus" class="mini" title="You hear the NEXT sentence — shift earlier">−</button>
           <span id="offVal" style="display:inline-block; min-width:52px; text-align:center; font-variant-numeric:tabular-nums">0.00s</span>
@@ -397,7 +398,14 @@ function buildSegments(raw){
 
 /* ---------- scoring ---------- */
 const NUMWORDS = {"0":"zero","1":"one","2":"two","3":"three","4":"four","5":"five","6":"six","7":"seven","8":"eight","9":"nine","10":"ten","11":"eleven","12":"twelve","13":"thirteen","14":"fourteen","15":"fifteen","16":"sixteen","17":"seventeen","18":"eighteen","19":"nineteen","20":"twenty","30":"thirty","40":"forty","50":"fifty","60":"sixty","70":"seventy","80":"eighty","90":"ninety","100":"hundred","1000":"thousand"};
-function normWords(s){ return s.toLowerCase().replace(/[’]/g,"'").replace(/'/g,"").replace(/[^a-z0-9 ]+/g," ").split(/\s+/).filter(Boolean).map(w => NUMWORDS[w] || w); }
+function isStrict(){ const c = $("strict"); return !!(c && c.checked); }
+function normWords(s){
+  const strict = isStrict();
+  let t = s.toLowerCase().replace(/[’]/g,"'");
+  if(!strict) t = t.replace(/'/g,"");
+  return t.replace(strict ? /[^a-z0-9' ]+/g : /[^a-z0-9 ]+/g, " ").split(/\s+/).filter(Boolean)
+    .map(w => w.replace(/^'+|'+$/g, "")).filter(Boolean).map(w => NUMWORDS[w] || w);
+}
 function editDist(a, b){
   if(Math.abs(a.length - b.length) > 2) return 99;
   const m = b.length, dp = new Array(m+1); for(let j=0;j<=m;j++) dp[j]=j;
@@ -405,7 +413,7 @@ function editDist(a, b){
     for(let j=1;j<=m;j++){ const tmp=dp[j]; dp[j]=Math.min(dp[j]+1, dp[j-1]+1, prev + (a[i-1]===b[j-1]?0:1)); prev=tmp; } }
   return dp[m];
 }
-function wordsClose(a, b){ if(a===b) return true; if(a.length<4||b.length<4) return false; const d=editDist(a,b); return d<=1 || (a.length>=8 && d<=2); }
+function wordsClose(a, b){ if(a===b) return true; if(isStrict()) return false; if(a.length<4||b.length<4) return false; const d=editDist(a,b); return d<=1 || (a.length>=8 && d<=2); }
 function scoreAgainst(target, heard){
   const A = normWords(target), B = normWords(heard), n = A.length, m = B.length;
   const dp = Array.from({length:n+1}, () => new Array(m+1).fill(0));
@@ -947,6 +955,8 @@ $("ghTokenClear").addEventListener("click", ()=>{
   $("ghTokenInput").value = ""; $("syncPanel").style.display = "none"; setSyncStatus("off"); toast("Token removed.");
 });
 setSyncStatus(ghToken() ? "on" : "off");
+try{ $("strict").checked = localStorage.getItem("shadowlab-strict") === "1"; }catch(e){}
+$("strict").addEventListener("change", e => { try{ localStorage.setItem("shadowlab-strict", e.target.checked ? "1" : "0"); }catch(er){} toast(e.target.checked ? "Strict scoring on — exact words only." : "Lenient scoring on."); });
 if(!gh) $("btnSync").style.display = "none";
 updateVisibility();
 refreshLibrary();
