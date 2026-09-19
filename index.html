@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shadow Lab">
+<title>Shadow Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --bg:#eef3f6; --surface:#ffffff; --surface2:#e2eaef; --ink:#1c2a33; --muted:#5b6f7c;
+  --line:#cfdbe2; --primary:#136f8b; --primary-ink:#ffffff; --rec:#d8453c;
+  --good:#1f8a58; --good-bg:#dcf2e6; --bad:#c23b3b; --bad-bg:#f9e2e2;
+  --chip:#dbe7ed; --focus:#136f8b;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f171d; --surface:#182430; --surface2:#101b23; --ink:#e7eef3; --muted:#8ba3b1;
+    --line:#2b3d4a; --primary:#4db3d4; --primary-ink:#0c1720; --rec:#ff6f61;
+    --good:#4ecb8f; --good-bg:#173428; --bad:#ff7a7a; --bad-bg:#3a1d1d;
+    --chip:#22323e; --focus:#4db3d4;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg); color:var(--ink);
+  font-family:"Archivo",-apple-system,"Segoe UI",Roboto,Arial,sans-serif; font-size:15px; line-height:1.5}
+button{font-family:inherit; font-size:14px; cursor:pointer; border:1px solid var(--line);
+  background:var(--surface); color:var(--ink); border-radius:8px; padding:8px 14px}
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+button:disabled{opacity:.45; cursor:not-allowed}
+button.primary{background:var(--primary); color:var(--primary-ink); border-color:var(--primary); font-weight:600}
+button.rec{background:var(--rec); color:#fff; border-color:var(--rec); font-weight:700}
+select{font-family:inherit; font-size:14px; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:7px 8px}
+header{display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:14px 20px; border-bottom:1px solid var(--line); background:var(--surface)}
+header h1{font-size:18px; font-weight:800; letter-spacing:-.02em; margin:0}
+header .sub{color:var(--muted); font-size:13px}
+header .spacer{flex:1}
+.filebtn{position:relative; overflow:hidden}
+.filebtn input{position:absolute; inset:0; opacity:0; cursor:pointer}
+main{display:grid; grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr); gap:18px; padding:18px 20px; max-width:1240px; margin:0 auto}
+@media (max-width:900px){ main{grid-template-columns:1fr} }
+.panel{background:var(--surface); border:1px solid var(--line); border-radius:12px}
+.videoWrap{padding:12px}
+video{width:100%; max-width:100%; border-radius:8px; background:#000; display:block}
+.vcontrols{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:0 12px 12px}
+.vcontrols label{font-size:13px; color:var(--muted)}
+.library{margin-bottom:18px; padding:14px 16px}
+.library h2{font-size:14px; font-weight:700; margin:0 0 8px; color:var(--muted)}
+.libRow{display:flex; align-items:center}
+.libItem{display:flex; align-items:center; gap:10px; flex:1; padding:8px 10px; border-radius:8px; border:none; background:none; text-align:left; font-size:14px}
+.libItem:hover{background:var(--surface2)}
+.libItem .nm{font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.libItem .meta{color:var(--muted); font-size:12px; white-space:nowrap}
+.libDel{border:none; background:none; color:var(--muted); font-size:15px; padding:4px 8px; border-radius:6px}
+.libDel:hover{color:var(--bad); background:var(--bad-bg)}
+.libEmpty{color:var(--muted); font-size:13px; padding:4px 10px}
+.stage{margin-top:18px; padding:20px}
+.stage .counter{color:var(--muted); font-size:13px; margin-bottom:8px}
+.sentence{font-size:26px; line-height:1.45; font-weight:600; letter-spacing:-.01em; min-height:76px}
+.sentence.blur{filter:blur(10px); cursor:pointer; user-select:none}
+.sentence .w{border-radius:5px; padding:1px 3px; margin:0 1px}
+.sentence .w.good{background:var(--good-bg); color:var(--good)}
+.sentence .w.bad{background:var(--bad-bg); color:var(--bad); text-decoration:underline dotted}
+.stage .actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; align-items:center}
+.stage .hint{color:var(--muted); font-size:13px; margin-top:10px}
+.dictRow{display:none; gap:8px; margin-top:12px}
+.dictRow.show{display:flex}
+.dictRow input{flex:1; min-width:0; border:1px solid var(--line); border-radius:8px; padding:10px; font-family:inherit; font-size:15px; background:var(--surface); color:var(--ink)}
+.result{margin-top:16px; border-top:1px dashed var(--line); padding-top:14px; display:none}
+.result.show{display:block}
+.scoreRow{display:flex; align-items:center; gap:14px; flex-wrap:wrap}
+.scoreBig{font-size:34px; font-weight:800; letter-spacing:-.02em}
+.scoreBig.good{color:var(--good)} .scoreBig.mid{color:var(--primary)} .scoreBig.bad{color:var(--bad)}
+.heard{margin-top:8px; color:var(--muted); font-size:14px}
+.heard b{color:var(--ink); font-weight:600}
+audio{width:100%; margin-top:10px; height:36px}
+.listPanel{display:flex; flex-direction:column; max-height:calc(100vh - 120px); position:sticky; top:14px}
+.listHead{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 12px 8px}
+.listHead h2{font-size:14px; font-weight:700; margin:0; color:var(--muted)}
+.mini{font-size:12px; padding:5px 10px; border-radius:6px}
+.mini.on{background:var(--primary); color:var(--primary-ink); border-color:var(--primary)}
+.editTip{display:none; color:var(--muted); font-size:12px; padding:0 14px 8px}
+.editTip.show{display:block}
+.seglist{overflow-y:auto; padding:0 8px 10px; flex:1}
+.segrow{display:flex; align-items:stretch}
+.seg{display:flex; gap:10px; align-items:flex-start; flex:1; min-width:0; text-align:left; border:none; background:none; padding:9px 10px; border-radius:8px; font-size:14px; line-height:1.4}
+.seg:hover{background:var(--surface2)}
+.segrow.active .seg{background:var(--surface2); box-shadow:inset 3px 0 0 var(--primary)}
+.seg .t{color:var(--muted); font-size:12px; min-width:44px; padding-top:2px; font-variant-numeric:tabular-nums}
+.seg .tx{min-width:0}
+.seg .best{margin-left:auto; font-size:12px; font-weight:700; border-radius:999px; padding:2px 8px; background:var(--chip)}
+.seg .best.good{color:var(--good)} .seg .best.bad{color:var(--bad)}
+.editCard{border:1px solid var(--line); border-radius:10px; padding:10px; margin:4px 2px; background:var(--surface)}
+.editCard.active{border-color:var(--primary)}
+.cardHead{color:var(--muted); font-size:12px; margin-bottom:8px; font-variant-numeric:tabular-nums}
+.words{display:flex; flex-wrap:wrap; gap:6px}
+.wordchip{border:1px solid var(--line); background:var(--surface2); color:var(--ink); padding:7px 10px; border-radius:8px; font-size:15px; line-height:1.2}
+.wordchip:hover:not(:disabled), .wordchip:active:not(:disabled){background:var(--bad-bg); color:var(--bad); border-color:var(--bad)}
+.wordchip.first{background:none; border-style:dotted; color:var(--muted); cursor:default}
+.cardBtns{display:flex; gap:8px; margin-top:10px}
+.cardBtns button{flex:1; padding:10px; font-size:14px}
+.cardBtns button.delBtn:hover{color:var(--bad); border-color:var(--bad); background:var(--bad-bg)}
+.editCard textarea{width:100%; min-height:70px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); padding:9px; font-family:inherit; font-size:15px; resize:vertical}
+.mergeBar{display:block; width:calc(100% - 4px); margin:2px 2px 6px; padding:10px; font-size:14px; font-weight:600; color:var(--primary); background:none; border:1px dashed var(--primary); border-radius:8px}
+.mergeBar:hover{background:var(--surface2)}
+.empty{padding:34px 26px; text-align:center}
+.empty h2{font-size:22px; font-weight:800; letter-spacing:-.02em; margin:0 0 8px}
+.empty p{color:var(--muted); max-width:52ch; margin:6px auto}
+.pasteBox{padding:0 16px 16px}
+.pasteBox summary{cursor:pointer; color:var(--muted); font-size:13px; padding:10px 0}
+.pasteBox textarea{width:100%; min-height:110px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); padding:10px; font-family:inherit; font-size:14px; resize:vertical}
+.toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:10px 18px; border-radius:999px; font-size:14px; opacity:0; pointer-events:none; transition:opacity .25s; max-width:90vw}
+.toast.show{opacity:1}
+.pulse{animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+@media (prefers-reduced-motion: reduce){ .toast{transition:none} .pulse{animation:none} }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Shadow Lab</h1><div class="sub">Listen → speak → get scored</div></div>
+  <div class="spacer"></div>
+  <button class="filebtn">🎬 Load video<input type="file" id="videoFile" accept="video/*,audio/*"></button>
+  <button class="filebtn">📄 Subtitles (.srt / .vtt)<input type="file" id="subFile" accept=".srt,.vtt,.txt"></button>
+  <button id="btnSave" style="display:none">💾 Save to library</button>
+</header>
+
+<main>
+  <section>
+    <div class="panel library" id="library" style="display:none">
+      <h2>My library (stored on this device)</h2>
+      <div id="libList"></div>
+    </div>
+
+    <div class="panel" id="playerPanel" style="display:none">
+      <div class="videoWrap"><video id="video" controls playsinline></video></div>
+      <div class="vcontrols">
+        <label>Speed
+          <select id="speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option></select>
+        </label>
+        <label><input type="checkbox" id="loop"> Loop sentence</label>
+        <label><input type="checkbox" id="autoNext" checked> Auto-advance on ≥80%</label>
+        <label>Sub sync
+          <button id="offMinus" class="mini" title="You hear the NEXT sentence — shift earlier">−</button>
+          <span id="offVal" style="display:inline-block; min-width:52px; text-align:center; font-variant-numeric:tabular-nums">0.00s</span>
+          <button id="offPlus" class="mini" title="You hear the PREVIOUS sentence — shift later">+</button>
+          <button id="offCal" class="mini" title="Pause the video exactly where the selected sentence starts, then press this">🎯 Sync here</button>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel empty" id="emptyState">
+      <h2>Set up your practice</h2>
+      <p><b>1.</b> Load a video (or audio) file.</p>
+      <p><b>2.</b> Load its subtitle file (.srt / .vtt) — Whisper-generated subtitles work best.</p>
+      <p><b>3.</b> Listen to a sentence, press <b>Speak</b>, repeat it, and get scored word by word.</p>
+      <p><b>4.</b> <b>💾 Save to library</b> keeps the video and your progress on this device.</p>
+      <p style="font-size:13px">Best speech recognition: Chrome on Windows/Mac/Android. iPhone/iPad: Safari (Apple's engine).</p>
+    </div>
+
+    <div class="panel stage" id="stage" style="display:none">
+      <div class="counter" id="counter"></div>
+      <div class="sentence" id="sentence"></div>
+      <div class="actions">
+        <button id="btnListen" class="primary">▶ Listen</button>
+        <button id="btnSpeak" class="rec">🎤 Speak</button>
+        <button id="btnPrev">← Prev</button>
+        <button id="btnNext">Next →</button>
+        <button id="btnMerge" title="Merge this sentence with the next one (M)">⤵ Merge next</button>
+        <button id="btnHide" title="Hide the text — listen, speak, then tap the sentence to reveal">🙈 Hide text</button>
+        <button id="btnGood" title="Self-rate: I said it correctly">✓ Got it</button>
+        <button id="btnDict" title="Type or dictate with your keyboard instead of the microphone">⌨️ Dictate</button>
+      </div>
+      <div class="hint" id="liveHint"></div>
+      <div class="dictRow" id="dictRow">
+        <input id="dictInput" type="text" autocomplete="off" placeholder="Tap here, use system dictation (Win+H / 🎙 key), then Enter…">
+        <button id="btnDictScore" class="primary">Score</button>
+      </div>
+      <div class="result" id="result">
+        <div class="scoreRow">
+          <div class="scoreBig" id="scoreBig"></div>
+          <div id="scoreLabel" style="color:var(--muted)"></div>
+        </div>
+        <div class="heard" id="heard"></div>
+        <audio id="myAudio" controls style="display:none"></audio>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel listPanel" id="listPanel" style="display:none">
+    <div class="listHead">
+      <h2 id="listTitle">Sentences</h2>
+      <button id="btnEdit" class="mini">✏️ Edit</button>
+    </div>
+    <div class="editTip" id="editTip">Tap a word → it and everything after move down to the next line. The ⤵ bar joins two lines. Timing follows automatically.</div>
+    <div class="seglist" id="seglist"></div>
+    <details class="pasteBox">
+      <summary>Paste transcript instead of a subtitle file</summary>
+      <textarea id="pasteArea" placeholder="One sentence per line…"></textarea>
+      <button id="btnUsePaste" style="margin-top:8px">Use pasted text</button>
+    </details>
+  </aside>
+</main>
+
+<aside class="panel" id="pasteOnly" style="max-width:1240px; margin:0 auto 20px; display:none">
+  <details class="pasteBox" open>
+    <summary>No subtitle file? Paste the transcript (one sentence per line)</summary>
+    <textarea id="pasteArea2" placeholder="Hello, my name is…&#10;I work as a test engineer."></textarea>
+    <button id="btnUsePaste2" style="margin-top:8px">Use pasted text</button>
+  </details>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const video = $("video");
+let segments = [], idx = 0, videoName = "", subRaw = "", localVideoFile = null;
+let editMode = false, editingIdx = -1, hideMode = false;
+let recActive = false, mediaRecorder = null, micStream = null, chunks = [];
+let recognition = null, finalHeard = "", interimHeard = "", stopTimer = null;
+let currentDoc = null;      // library entry when playing a saved video
+let saveTimer = null;
+let subOffset = 0;
+
+/* ---------- toast ---------- */
+let toastT;
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),3200); }
+
+/* ---------- IndexedDB library ---------- */
+const DB_NAME = "shadowlab", STORE = "videos";
+function idb(){
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore(STORE, {keyPath: "id"}); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbAll(){
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const rq = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+    rq.onsuccess = () => res(rq.result || []); rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbPut(doc){
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).put(doc);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbDel(id){
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+}
+function scheduleSave(){
+  if(!currentDoc) return;
+  currentDoc.segs = segments.map(s => ({s: s.start, e: s.end, t: s.text}));
+  currentDoc.segCount = segments.length;
+  currentDoc.offset = subOffset;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=> idbPut(currentDoc).catch(()=> toast("Couldn't save progress on this device.")), 400);
+}
+
+/* ---------- progress ---------- */
+function loadProg(){ try{ return JSON.parse(localStorage.getItem("shadowlab") || "{}"); }catch(e){ return {}; } }
+function saveBest(i, score){
+  if(currentDoc){
+    currentDoc.scores = currentDoc.scores || {};
+    if(currentDoc.scores[i] === undefined || score > currentDoc.scores[i]){ currentDoc.scores[i] = score; scheduleSave(); }
+    return;
+  }
+  try{ const p = loadProg(); p[videoName] = p[videoName] || {};
+    if(!(i in p[videoName]) || score > p[videoName][i]) p[videoName][i] = score;
+    localStorage.setItem("shadowlab", JSON.stringify(p)); }catch(e){}
+}
+function bestOf(i){
+  if(currentDoc) return (currentDoc.scores || {})[i];
+  try{ return (loadProg()[videoName] || {})[i]; }catch(e){ return undefined; }
+}
+function applyScoreRemap(fn){
+  if(currentDoc){ currentDoc.scores = fn(currentDoc.scores || {}); scheduleSave(); return; }
+  try{ const p = loadProg(); if(p[videoName]){ p[videoName] = fn(p[videoName]); localStorage.setItem("shadowlab", JSON.stringify(p)); } }catch(e){}
+}
+
+/* ---------- subtitle parsing ---------- */
+function tsToSec(ts){
+  const m = ts.trim().replace(",", ".").match(/(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)/);
+  if(!m) return null;
+  return (+(m[1]||0))*3600 + (+m[2])*60 + parseFloat(m[3]);
+}
+function parseSubs(text){
+  const out = [];
+  for(const b of text.replace(/\r/g,"").split(/\n{2,}/)){
+    const lines = b.split("\n").filter(l => l.trim() !== "");
+    const ti = lines.findIndex(l => l.includes("-->"));
+    if(ti === -1) continue;
+    const [a, c] = lines[ti].split("-->");
+    const start = tsToSec(a), end = tsToSec(c);
+    const txt = lines.slice(ti+1).join(" ").replace(/<[^>]+>/g," ").replace(/\{[^}]+\}/g," ").replace(/\s+/g," ").trim();
+    if(txt && start != null && end != null && (!out.length || out[out.length-1].text !== txt)) out.push({start, end, text: txt});
+  }
+  return out;
+}
+function parsetext(text){ return text.split(/\n+/).map(s=>s.trim()).filter(Boolean).map(t => ({start:null, end:null, text:t})); }
+const WORD_TS = /<((?:\d{1,2}:)?\d{1,2}:\d{2}\.\d{3})>/;
+function parseYtWords(text){
+  const words = [];
+  for(const b of text.replace(/\r/g,"").split(/\n{2,}/)){
+    const lines = b.split("\n").filter(l => l.trim() !== "");
+    const ti = lines.findIndex(l => l.includes("-->"));
+    if(ti === -1) continue;
+    const start = tsToSec(lines[ti].split("-->")[0]);
+    if(start == null) continue;
+    for(const line of lines.slice(ti+1)){
+      if(!WORD_TS.test(line)) continue;
+      const parts = line.split(new RegExp(WORD_TS.source, "g"));
+      let t = start;
+      for(let p = 0; p < parts.length; p++){
+        if(p % 2 === 1){ const v = tsToSec(parts[p]); if(v != null) t = v; continue; }
+        const chunk = parts[p].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+        if(chunk) for(const w of chunk.split(" ")) words.push({t, w});
+      }
+    }
+  }
+  return words;
+}
+function wordsToSegments(words){
+  const raw = []; let cur = null;
+  for(let i = 0; i < words.length; i++){
+    const t = words[i].t, w = words[i].w, gap = i > 0 ? t - words[i-1].t : 0;
+    if(!cur || gap > 0.7 || cur.n >= 14 || cur.text.length > 90){ if(cur) raw.push(cur); cur = {start: t, last: t, text: "", n: 0}; }
+    cur.text = cur.text ? cur.text + " " + w : w; cur.n++; cur.last = t;
+  }
+  if(cur) raw.push(cur);
+  return raw.map((s, i) => ({start: s.start, end: i+1 < raw.length ? raw[i+1].start : s.last + 1.5, text: s.text}));
+}
+function buildSegments(raw){
+  if(WORD_TS.test(raw)){ const words = parseYtWords(raw); if(words.length > 3) return wordsToSegments(words); }
+  let segs = parseSubs(raw);
+  const out = [];
+  for(let i = 0; i < segs.length; i++){
+    const s = segs[i], nx = segs[i+1];
+    if(nx && nx.text.length > s.text.length && nx.text.toLowerCase().indexOf(s.text.toLowerCase()) !== -1) continue;
+    out.push(s);
+  }
+  segs = out;
+  if(!segs.length) segs = parsetext(raw);
+  return segs;
+}
+
+/* ---------- scoring ---------- */
+const NUMWORDS = {"0":"zero","1":"one","2":"two","3":"three","4":"four","5":"five","6":"six","7":"seven","8":"eight","9":"nine","10":"ten","11":"eleven","12":"twelve","13":"thirteen","14":"fourteen","15":"fifteen","16":"sixteen","17":"seventeen","18":"eighteen","19":"nineteen","20":"twenty","30":"thirty","40":"forty","50":"fifty","60":"sixty","70":"seventy","80":"eighty","90":"ninety","100":"hundred","1000":"thousand"};
+function normWords(s){ return s.toLowerCase().replace(/[’]/g,"'").replace(/'/g,"").replace(/[^a-z0-9 ]+/g," ").split(/\s+/).filter(Boolean).map(w => NUMWORDS[w] || w); }
+function editDist(a, b){
+  if(Math.abs(a.length - b.length) > 2) return 99;
+  const m = b.length, dp = new Array(m+1); for(let j=0;j<=m;j++) dp[j]=j;
+  for(let i=1;i<=a.length;i++){ let prev=dp[0]; dp[0]=i;
+    for(let j=1;j<=m;j++){ const tmp=dp[j]; dp[j]=Math.min(dp[j]+1, dp[j-1]+1, prev + (a[i-1]===b[j-1]?0:1)); prev=tmp; } }
+  return dp[m];
+}
+function wordsClose(a, b){ if(a===b) return true; if(a.length<4||b.length<4) return false; const d=editDist(a,b); return d<=1 || (a.length>=8 && d<=2); }
+function scoreAgainst(target, heard){
+  const A = normWords(target), B = normWords(heard), n = A.length, m = B.length;
+  const dp = Array.from({length:n+1}, () => new Array(m+1).fill(0));
+  for(let i=1;i<=n;i++) for(let j=1;j<=m;j++) dp[i][j] = wordsClose(A[i-1],B[j-1]) ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j], dp[i][j-1]);
+  const matched = new Array(n).fill(false); let i=n, j=m;
+  while(i>0 && j>0){ if(wordsClose(A[i-1],B[j-1])){ matched[i-1]=true; i--; j--; } else if(dp[i-1][j] >= dp[i][j-1]) i--; else j--; }
+  return {matched, score: n ? Math.round(100 * matched.filter(Boolean).length / n) : 0};
+}
+
+/* ---------- editing ---------- */
+function mergeSeg(i){
+  if(i < 0 || i >= segments.length-1){ toast("Nothing below to merge with."); return; }
+  const a = segments[i], b = segments[i+1];
+  a.text = (a.text + " " + b.text).replace(/\s+/g," ").trim();
+  if(b.end != null) a.end = b.end;
+  if(a.start == null && b.start != null) a.start = b.start;
+  segments.splice(i+1, 1);
+  applyScoreRemap(old => { const out={}; for(const k in old){ const j=+k; if(j<i) out[j]=old[k]; else if(j===i||j===i+1) out[i]=Math.max(out[i]||0, old[k]); else out[j-1]=old[k]; } return out; });
+  if(idx > i) idx--;
+  editingIdx = -1; scheduleSave(); select(idx);
+}
+function deleteSeg(i){
+  if(segments.length <= 1){ toast("Can't delete the last sentence."); return; }
+  segments.splice(i, 1);
+  applyScoreRemap(old => { const out={}; for(const k in old){ const j=+k; if(j<i) out[j]=old[k]; else if(j>i) out[j-1]=old[k]; } return out; });
+  if(idx >= i) idx = Math.max(0, idx-1);
+  editingIdx = -1; scheduleSave(); select(idx);
+}
+function commitEdit(i, newText){
+  const t = newText.replace(/\s+/g," ").trim(); editingIdx = -1;
+  if(t && t !== segments[i].text){ segments[i].text = t; scheduleSave(); }
+  select(idx);
+}
+function splitSeg(i, k){
+  const words = segments[i].text.split(/\s+/).filter(Boolean);
+  if(k <= 0 || k >= words.length) return;
+  const head = words.slice(0,k).join(" "), tail = words.slice(k).join(" "), s = segments[i];
+  let t = null;
+  if(s.start != null && s.end != null) t = s.start + (s.end - s.start) * (k / words.length);
+  s.text = head;
+  const next = segments[i+1];
+  if(next){
+    next.text = (tail + " " + next.text).replace(/\s+/g," ").trim();
+    if(t != null){ s.end = t; if(next.start != null) next.start = Math.min(next.start, t); }
+    applyScoreRemap(old => { const out=Object.assign({}, old); delete out[i]; delete out[i+1]; return out; });
+  }else{
+    const ns = {start: t, end: (t != null ? s.end : null), text: tail};
+    if(t != null) s.end = t;
+    segments.splice(i+1, 0, ns);
+    applyScoreRemap(old => { const out={}; for(const kk in old){ const j=+kk; if(j<i) out[j]=old[kk]; else if(j>i) out[j+1]=old[kk]; } return out; });
+  }
+  editingIdx = -1; scheduleSave(); select(idx);
+}
+
+/* ---------- rendering ---------- */
+function fmt(sec){ const m=Math.floor(sec/60), s=Math.floor(sec%60); return m+":"+String(s).padStart(2,"0"); }
+function renderList(){
+  const el = $("seglist"); el.innerHTML = "";
+  segments.forEach((s, i) => {
+    if(editMode){
+      const card = document.createElement("div"); card.className = "editCard" + (i===idx ? " active" : "");
+      const head = document.createElement("div"); head.className = "cardHead";
+      head.textContent = "Line " + (i+1) + (s.start != null ? "  ·  " + fmt(s.start) + "–" + fmt(s.end) : "");
+      card.append(head);
+      if(i === editingIdx){
+        const ta = document.createElement("textarea"); ta.value = s.text;
+        const r = document.createElement("div"); r.className = "cardBtns";
+        const ok = document.createElement("button"); ok.className = "primary"; ok.textContent = "✓ Save";
+        const cancel = document.createElement("button"); cancel.textContent = "Cancel";
+        ok.addEventListener("click", ()=> commitEdit(i, ta.value));
+        cancel.addEventListener("click", ()=> { editingIdx = -1; renderList(); });
+        ta.addEventListener("keydown", ev => { if(ev.key==="Enter" && !ev.shiftKey){ ev.preventDefault(); commitEdit(i, ta.value); } if(ev.key==="Escape"){ editingIdx=-1; renderList(); } });
+        r.append(ok, cancel); card.append(ta, r); el.append(card); setTimeout(()=> ta.focus(), 0);
+      }else{
+        const words = document.createElement("div"); words.className = "words";
+        s.text.split(/\s+/).forEach((w, k) => {
+          const chip = document.createElement("button"); chip.className = "wordchip" + (k===0 ? " first" : ""); chip.textContent = w;
+          if(k > 0){ chip.title = "Cut here — this word and the rest move down"; chip.addEventListener("click", ()=> splitSeg(i, k)); } else chip.disabled = true;
+          words.append(chip);
+        });
+        const r = document.createElement("div"); r.className = "cardBtns";
+        const ed = document.createElement("button"); ed.textContent = "✎ Edit text"; ed.addEventListener("click", ()=> { editingIdx = i; renderList(); });
+        const dl = document.createElement("button"); dl.className = "delBtn"; dl.textContent = "✕ Delete"; dl.addEventListener("click", ()=> deleteSeg(i));
+        r.append(ed, dl); card.append(words, r); el.append(card);
+      }
+      if(i < segments.length-1){ const mb = document.createElement("button"); mb.className = "mergeBar"; mb.textContent = "⤵ Join with line below"; mb.addEventListener("click", ()=> mergeSeg(i)); el.append(mb); }
+      return;
+    }
+    const row = document.createElement("div"); row.className = "segrow" + (i===idx ? " active" : "");
+    const b = document.createElement("button"); b.className = "seg"; b.setAttribute("aria-current", i===idx ? "true" : "false");
+    const t = document.createElement("span"); t.className = "t"; t.textContent = s.start != null ? fmt(s.start) : (i+1)+".";
+    const tx = document.createElement("span"); tx.className = "tx"; tx.textContent = s.text;
+    b.append(t, tx);
+    const best = bestOf(i);
+    if(best !== undefined){ const c = document.createElement("span"); c.className = "best " + (best>=80 ? "good" : best<50 ? "bad" : ""); c.textContent = best + "%"; b.append(c); }
+    b.addEventListener("click", ()=> select(i));
+    row.append(b); el.append(row);
+  });
+  $("listTitle").textContent = "Sentences (" + segments.length + ")";
+}
+function renderSentence(marks){
+  const el = $("sentence"); el.innerHTML = "";
+  const raw = segments[idx].text.split(/\s+/); let wi = 0;
+  raw.forEach((word, k) => {
+    const span = document.createElement("span"); span.className = "w"; span.textContent = word;
+    const hasLetters = /[a-z0-9]/i.test(word);
+    if(marks && hasLetters) span.classList.add(marks[wi] ? "good" : "bad");
+    if(hasLetters) wi++;
+    el.append(span); if(k < raw.length-1) el.append(document.createTextNode(" "));
+  });
+}
+function select(i){
+  if(!segments.length) return;
+  stopRecording(true);
+  idx = Math.max(0, Math.min(segments.length-1, i));
+  $("counter").textContent = "Sentence " + (idx+1) + " of " + segments.length + (segments[idx].start != null ? "  ·  " + fmt(segments[idx].start) + "–" + fmt(segments[idx].end) : "");
+  renderSentence(null);
+  $("sentence").classList.toggle("blur", hideMode);
+  $("result").classList.remove("show");
+  $("liveHint").textContent = "";
+  $("btnListen").disabled = segments[idx].start == null || !video.src;
+  $("btnMerge").disabled = idx >= segments.length-1;
+  renderList();
+  const active = document.querySelector(".segrow.active"); if(active) active.scrollIntoView({block:"nearest"});
+}
+
+/* ---------- playback ---------- */
+function setOffset(v){
+  subOffset = Math.round(v * 20) / 20;
+  $("offVal").textContent = (subOffset > 0 ? "+" : "") + subOffset.toFixed(2) + "s";
+  scheduleSave();
+}
+function playSegment(){
+  const s = segments[idx]; if(!s || s.start == null || !video.src) return;
+  video.currentTime = Math.max(0, s.start + subOffset); video.play();
+}
+video.addEventListener("timeupdate", () => {
+  const s = segments[idx]; if(!s || s.end == null || video.paused) return;
+  if(video.currentTime >= s.end + subOffset - 0.04){ if($("loop").checked) video.currentTime = Math.max(0, s.start + subOffset); else video.pause(); }
+});
+$("speed").addEventListener("change", e => { video.playbackRate = parseFloat(e.target.value); });
+
+/* ---------- recording + recognition ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+async function startRecording(){
+  video.pause(); finalHeard = ""; interimHeard = ""; chunks = [];
+  let micErr = null;
+  try{ if(!micStream || !micStream.active) micStream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ micErr = e; micStream = null; }
+  if(micErr && !SR){
+    toast(micErr.name === "NotAllowedError" ? "Microphone permission denied — allow it in the browser's site settings (🔒 icon) and reload." : "Microphone error: " + micErr.name);
+    return;
+  }
+  mediaRecorder = null;
+  if(micStream){
+    try{ mediaRecorder = new MediaRecorder(micStream);
+      mediaRecorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+      mediaRecorder.onstop = onRecorded; mediaRecorder.start(); }catch(e){ mediaRecorder = null; }
+  }
+  if(SR){
+    recognition = new SR(); recognition.lang = "en-US"; recognition.continuous = true; recognition.interimResults = true;
+    recognition.onresult = ev => {
+      interimHeard = "";
+      for(let k = ev.resultIndex; k < ev.results.length; k++){ const r = ev.results[k]; if(r.isFinal) finalHeard += r[0].transcript + " "; else interimHeard += r[0].transcript + " "; }
+      $("liveHint").textContent = "Hearing: " + (finalHeard + interimHeard).trim();
+    };
+    recognition.onerror = ev => {
+      if(ev.error === "not-allowed" || ev.error === "service-not-allowed"){ stopRecording(true); toast("Speech recognition blocked — allow the microphone for this site and reload."); }
+      else if(ev.error !== "no-speech" && ev.error !== "aborted") $("liveHint").textContent = "Recognition error: " + ev.error;
+    };
+    recognition.onend = () => { if(recActive){ try{ recognition.start(); }catch(e){} } };
+    try{ recognition.start(); }catch(e){}
+  }else{
+    $("liveHint").textContent = "This browser has no speech recognition — recording only (use ⌨️ Dictate to score).";
+  }
+  recActive = true;
+  const btn = $("btnSpeak"); btn.textContent = "■ Stop"; btn.classList.add("pulse");
+  clearTimeout(stopTimer); stopTimer = setTimeout(()=> stopRecording(false), 45000);
+}
+function stopRecording(silent){
+  if(!recActive) return;
+  recActive = false; clearTimeout(stopTimer);
+  const btn = $("btnSpeak"); btn.textContent = "🎤 Speak"; btn.classList.remove("pulse");
+  if(recognition){ try{ recognition.stop(); }catch(e){} }
+  if(mediaRecorder && mediaRecorder.state !== "inactive"){ if(silent) mediaRecorder.onstop = null; try{ mediaRecorder.stop(); }catch(e){} }
+  else if(!silent) onRecorded();
+}
+function onRecorded(){ setTimeout(()=> presentScore((finalHeard + " " + interimHeard).trim(), true), 500); }
+function presentScore(heard, withAudio){
+  heard = (heard || "").trim();
+  const {matched, score} = scoreAgainst(segments[idx].text, heard);
+  renderSentence(heard ? matched : null);
+  $("sentence").classList.remove("blur");
+  $("result").classList.add("show");
+  const big = $("scoreBig");
+  if(heard || SR || !withAudio){
+    big.textContent = score + "%"; big.className = "scoreBig " + (score>=80 ? "good" : score>=50 ? "mid" : "bad");
+    $("scoreLabel").textContent = score>=80 ? "Great — clearly understood." : score>=50 ? "Getting there — check the red words." : "Try again slowly, word by word.";
+    $("heard").textContent = heard ? "Heard: " : "Nothing was recognized — speak louder / closer to the mic.";
+    if(heard){ const b = document.createElement("b"); b.textContent = heard; $("heard").append(b); }
+    saveBest(idx, score); renderList();
+    if($("autoNext").checked && score>=80 && idx < segments.length-1) setTimeout(()=>{ select(idx+1); playSegment(); }, 1600);
+  }else{
+    big.textContent = "—"; big.className = "scoreBig"; $("scoreLabel").textContent = "Listen to your recording and compare by ear."; $("heard").textContent = "";
+  }
+  if(withAudio && chunks.length){ const a = $("myAudio"); a.src = URL.createObjectURL(new Blob(chunks, {type: chunks[0].type || "audio/webm"})); a.style.display = "block"; }
+  else $("myAudio").style.display = "none";
+  $("liveHint").textContent = "";
+}
+
+/* ---------- library UI ---------- */
+async function refreshLibrary(){
+  let docs = [];
+  try{ docs = await idbAll(); }catch(e){ $("library").style.display = "none"; return; }
+  docs.sort((a,b) => (b.addedAt||0) - (a.addedAt||0));
+  const list = $("libList"); list.innerHTML = "";
+  $("library").style.display = "block";
+  if(!docs.length){ const d = document.createElement("div"); d.className = "libEmpty"; d.textContent = "Nothing saved yet — load a video + subtitles, then press 💾 Save to library."; list.append(d); return; }
+  docs.forEach(doc => {
+    const row = document.createElement("div"); row.className = "libRow";
+    const b = document.createElement("button"); b.className = "libItem";
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = "▶ " + doc.name;
+    const meta = document.createElement("span"); meta.className = "meta"; meta.textContent = (doc.segCount || "?") + " sentences";
+    b.append(nm, meta); b.addEventListener("click", ()=> openFromLibrary(doc));
+    const del = document.createElement("button"); del.className = "libDel"; del.textContent = "✕"; del.title = "Delete from library";
+    del.addEventListener("click", async ()=>{
+      if(!del.dataset.armed){ del.dataset.armed = "1"; del.textContent = "Delete?"; setTimeout(()=>{ if(del.dataset.armed){ delete del.dataset.armed; del.textContent = "✕"; } }, 4000); return; }
+      try{ await idbDel(doc.id); if(currentDoc && currentDoc.id === doc.id) currentDoc = null; toast("Deleted."); }catch(e){ toast("Couldn't delete."); }
+      refreshLibrary();
+    });
+    row.append(b, del); list.append(row);
+  });
+}
+function openFromLibrary(doc){
+  stopRecording(true);
+  const segs = (doc.segs || []).map(o => ({start: o.s == null ? null : o.s, end: o.e == null ? null : o.e, text: String(o.t || "")})).filter(s => s.text);
+  if(!segs.length){ toast("This entry has no sentences."); return; }
+  currentDoc = doc; localVideoFile = null; videoName = doc.name;
+  editMode = false; editingIdx = -1; $("btnEdit").classList.remove("on"); $("btnEdit").textContent = "✏️ Edit"; $("editTip").classList.remove("show");
+  video.src = URL.createObjectURL(doc.blob);
+  $("playerPanel").style.display = "block";
+  segments = segs; idx = 0;
+  subOffset = doc.offset || 0; $("offVal").textContent = (subOffset > 0 ? "+" : "") + subOffset.toFixed(2) + "s";
+  updateVisibility(); updateSaveBtn();
+  let start = 0; const sc = doc.scores || {};
+  for(let i=0;i<segs.length;i++){ if((sc[i]||0) < 80){ start = i; break; } }
+  select(start);
+  toast("Loaded “" + videoName + "”.");
+}
+async function saveToLibrary(){
+  if(!localVideoFile || !segments.length){ toast("Load a video and its subtitles first."); return; }
+  const btn = $("btnSave"); btn.disabled = true; btn.textContent = "Saving…";
+  const doc = {
+    id: Date.now().toString(36), name: localVideoFile.name.replace(/\.[^.]+$/, ""),
+    blob: localVideoFile, segs: segments.map(s => ({s: s.start, e: s.end, t: s.text})),
+    segCount: segments.length, addedAt: Date.now(), offset: subOffset, scores: {}
+  };
+  try{ const p = loadProg()[videoName]; if(p) doc.scores = p; }catch(e){}
+  try{ await idbPut(doc); currentDoc = doc; toast("Saved on this device."); refreshLibrary(); }
+  catch(e){ toast("Couldn't save — the browser may be out of storage space."); }
+  btn.disabled = false; btn.textContent = "💾 Save to library"; updateSaveBtn();
+}
+function updateSaveBtn(){ $("btnSave").style.display = (localVideoFile && segments.length && !currentDoc) ? "" : "none"; }
+
+/* ---------- wiring ---------- */
+$("videoFile").addEventListener("change", e => {
+  const f = e.target.files[0]; if(!f) return;
+  video.src = URL.createObjectURL(f); videoName = f.name; localVideoFile = f; currentDoc = null;
+  subOffset = 0; $("offVal").textContent = "0.00s";
+  $("playerPanel").style.display = "block";
+  updateVisibility(); updateSaveBtn(); if(segments.length) select(idx);
+  toast("Loaded " + f.name);
+});
+$("subFile").addEventListener("change", async e => { const f = e.target.files[0]; if(!f) return; applySegments(await f.text(), f.name); });
+function usePaste(area){ const raw = $(area).value; if(!raw.trim()){ toast("Paste at least one sentence first."); return; } applySegments(raw, "pasted text"); }
+$("btnUsePaste").addEventListener("click", ()=> usePaste("pasteArea"));
+$("btnUsePaste2").addEventListener("click", ()=> usePaste("pasteArea2"));
+function applySegments(raw, sourceName){
+  const segs = buildSegments(raw);
+  if(!segs.length){ toast("Couldn't read any sentences from that."); return; }
+  segments = segs; subRaw = raw; idx = 0; editingIdx = -1;
+  if(currentDoc){ currentDoc.scores = {}; scheduleSave(); }
+  updateVisibility(); updateSaveBtn(); select(0);
+  toast(segs.length + " sentences loaded from " + sourceName);
+}
+function updateVisibility(){
+  const have = segments.length > 0;
+  $("stage").style.display = have ? "block" : "none";
+  $("listPanel").style.display = have ? "flex" : "none";
+  $("emptyState").style.display = (have && video.src) ? "none" : "";
+  $("pasteOnly").style.display = have ? "none" : "block";
+}
+$("btnListen").addEventListener("click", playSegment);
+$("btnSpeak").addEventListener("click", ()=> recActive ? stopRecording(false) : startRecording());
+$("btnPrev").addEventListener("click", ()=> select(idx-1));
+$("btnNext").addEventListener("click", ()=> select(idx+1));
+$("btnMerge").addEventListener("click", ()=> mergeSeg(idx));
+$("btnSave").addEventListener("click", saveToLibrary);
+$("offMinus").addEventListener("click", ()=> setOffset(subOffset - 0.25));
+$("offPlus").addEventListener("click", ()=> setOffset(subOffset + 0.25));
+$("offCal").addEventListener("click", ()=>{ const s = segments[idx]; if(!s || s.start == null || !video.src){ toast("Select a timed sentence first."); return; } setOffset(video.currentTime - s.start); toast("Synced — sentence " + (idx+1) + " now starts here."); });
+$("btnHide").addEventListener("click", ()=>{ hideMode = !hideMode; $("btnHide").textContent = hideMode ? "👁 Show text" : "🙈 Hide text"; $("sentence").classList.toggle("blur", hideMode); });
+$("sentence").addEventListener("click", ()=> $("sentence").classList.remove("blur"));
+$("btnGood").addEventListener("click", ()=>{ saveBest(idx, 100); renderList(); if($("autoNext").checked && idx < segments.length-1){ select(idx+1); playSegment(); } else toast("Marked ✓"); });
+$("btnDict").addEventListener("click", ()=>{ const r = $("dictRow"); r.classList.toggle("show"); if(r.classList.contains("show")) $("dictInput").focus(); });
+$("btnDictScore").addEventListener("click", ()=>{ presentScore($("dictInput").value, false); $("dictInput").value = ""; });
+$("dictInput").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); presentScore(e.target.value, false); e.target.value = ""; } });
+$("btnEdit").addEventListener("click", ()=>{ editMode = !editMode; editingIdx = -1; const b = $("btnEdit"); b.classList.toggle("on", editMode); b.textContent = editMode ? "✓ Done" : "✏️ Edit"; $("editTip").classList.toggle("show", editMode); renderList(); });
+document.addEventListener("keydown", e => {
+  if(["TEXTAREA","INPUT","SELECT"].includes(document.activeElement.tagName)) return;
+  if(e.key === "ArrowRight") select(idx+1);
+  else if(e.key === "ArrowLeft") select(idx-1);
+  else if(e.key.toLowerCase() === "l"){ e.preventDefault(); playSegment(); }
+  else if(e.key.toLowerCase() === "s"){ e.preventDefault(); recActive ? stopRecording(false) : startRecording(); }
+  else if(e.key.toLowerCase() === "m"){ e.preventDefault(); mergeSeg(idx); }
+});
+updateVisibility();
+refreshLibrary();
+</script>
+</body>
+</html>
