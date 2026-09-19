@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Shadow Lab">
 <title>Shadow Lab</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500&display=swap">
 <style>
 :root{
   --bg:#eef3f6; --surface:#ffffff; --surface2:#e2eaef; --ink:#1c2a33; --muted:#5b6f7c;
@@ -58,11 +58,16 @@ video{width:100%; max-width:100%; border-radius:8px; background:#000; display:bl
 .libEmpty{color:var(--muted); font-size:13px; padding:4px 10px}
 .stage{margin-top:18px; padding:20px}
 .stage .counter{color:var(--muted); font-size:13px; margin-bottom:8px}
-.sentence{font-size:26px; line-height:1.45; font-weight:600; letter-spacing:-.01em; min-height:76px}
+.sentence{display:flex; flex-wrap:wrap; gap:8px 10px; align-items:flex-end; font-size:26px; line-height:1.3; font-weight:600; letter-spacing:-.01em; min-height:76px}
 .sentence.blur{filter:blur(10px); cursor:pointer; user-select:none}
-.sentence .w{border-radius:5px; padding:1px 3px; margin:0 1px}
+.wb{display:inline-flex; flex-direction:column; align-items:center}
+.sentence .w{border-radius:5px; padding:1px 3px}
 .sentence .w.good{background:var(--good-bg); color:var(--good)}
 .sentence .w.bad{background:var(--bad-bg); color:var(--bad); text-decoration:underline dotted}
+.wi{display:none; font-family:"Noto Sans","Segoe UI",Arial,sans-serif; font-weight:400; font-size:14px; letter-spacing:.01em; color:var(--muted); margin-top:3px; white-space:nowrap}
+.sentence.ipa .wi{display:block}
+.wi.unk{opacity:.45}
+#btnIpa.on{background:var(--primary); color:var(--primary-ink); border-color:var(--primary)}
 .stage .actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; align-items:center}
 .stage .hint{color:var(--muted); font-size:13px; margin-top:10px}
 .dictRow{display:none; gap:8px; margin-top:12px}
@@ -129,6 +134,11 @@ audio{width:100%; margin-top:10px; height:36px}
 
 <main>
   <section>
+    <div class="panel library" id="repoLib" style="display:none">
+      <h2>Lessons in this repo (same on every device)</h2>
+      <div id="repoList"></div>
+    </div>
+
     <div class="panel library" id="library" style="display:none">
       <h2>My library (stored on this device)</h2>
       <div id="libList"></div>
@@ -170,6 +180,7 @@ audio{width:100%; margin-top:10px; height:36px}
         <button id="btnNext">Next →</button>
         <button id="btnMerge" title="Merge this sentence with the next one (M)">⤵ Merge next</button>
         <button id="btnHide" title="Hide the text — listen, speak, then tap the sentence to reveal">🙈 Hide text</button>
+        <button id="btnIpa" title="Show American IPA under the sentence (needs ipa.json in the repo)">🔤 IPA</button>
         <button id="btnGood" title="Self-rate: I said it correctly">✓ Got it</button>
         <button id="btnDict" title="Type or dictate with your keyboard instead of the microphone">⌨️ Dictate</button>
       </div>
@@ -192,7 +203,10 @@ audio{width:100%; margin-top:10px; height:36px}
   <aside class="panel listPanel" id="listPanel" style="display:none">
     <div class="listHead">
       <h2 id="listTitle">Sentences</h2>
-      <button id="btnEdit" class="mini">✏️ Edit</button>
+      <span style="display:flex; gap:6px">
+        <button id="btnExport" class="mini" title="Download the current sentences as a .vtt file (with sync offset applied)">⬇ .vtt</button>
+        <button id="btnEdit" class="mini">✏️ Edit</button>
+      </span>
     </div>
     <div class="editTip" id="editTip">Tap a word → it and everything after move down to the next line. The ⤵ bar joins two lines. Timing follows automatically.</div>
     <div class="seglist" id="seglist"></div>
@@ -264,12 +278,16 @@ async function idbDel(id){
   });
 }
 function scheduleSave(){
-  if(!currentDoc) return;
-  currentDoc.segs = segments.map(s => ({s: s.start, e: s.end, t: s.text}));
-  currentDoc.segCount = segments.length;
-  currentDoc.offset = subOffset;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(()=> idbPut(currentDoc).catch(()=> toast("Couldn't save progress on this device.")), 400);
+  if(currentDoc){
+    currentDoc.segs = segments.map(s => ({s: s.start, e: s.end, t: s.text}));
+    currentDoc.segCount = segments.length;
+    currentDoc.offset = subOffset;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=> idbPut(currentDoc).catch(()=> toast("Couldn't save progress on this device.")), 400);
+  }else if(videoName.indexOf("repo:") === 0){
+    try{ localStorage.setItem("shadowlab-segs:" + videoName,
+      JSON.stringify({segs: segments.map(s => ({s: s.start, e: s.end, t: s.text})), offset: subOffset})); }catch(e){}
+  }
 }
 
 /* ---------- progress ---------- */
@@ -470,15 +488,27 @@ function renderList(){
   });
   $("listTitle").textContent = "Sentences (" + segments.length + ")";
 }
+let lastMarks = null;
 function renderSentence(marks){
+  lastMarks = marks;
   const el = $("sentence"); el.innerHTML = "";
+  el.classList.toggle("ipa", showIpa && !!ipaDict);
   const raw = segments[idx].text.split(/\s+/); let wi = 0;
-  raw.forEach((word, k) => {
+  raw.forEach(word => {
+    const wb = document.createElement("span"); wb.className = "wb";
     const span = document.createElement("span"); span.className = "w"; span.textContent = word;
     const hasLetters = /[a-z0-9]/i.test(word);
     if(marks && hasLetters) span.classList.add(marks[wi] ? "good" : "bad");
     if(hasLetters) wi++;
-    el.append(span); if(k < raw.length-1) el.append(document.createTextNode(" "));
+    wb.append(span);
+    if(showIpa && ipaDict && hasLetters){
+      const ip = document.createElement("span"); ip.className = "wi";
+      const ipa = ipaForWord(word);
+      if(ipa) ip.textContent = "/" + ipa + "/";
+      else { ip.textContent = "—"; ip.classList.add("unk"); }
+      wb.append(ip);
+    }
+    el.append(wb);
   });
 }
 function select(i){
@@ -634,6 +664,133 @@ async function saveToLibrary(){
 }
 function updateSaveBtn(){ $("btnSave").style.display = (localVideoFile && segments.length && !currentDoc) ? "" : "none"; }
 
+/* ---------- lessons stored in the GitHub repo ---------- */
+const gh = (()=>{
+  try{
+    const h = location.hostname;
+    if(!h.endsWith("github.io")) return null;
+    const repo = location.pathname.split("/").filter(Boolean)[0];
+    return repo ? {owner: h.split(".")[0], repo} : null;
+  }catch(e){ return null; }
+})();
+const VIDEO_EXT = /\.(mp4|m4v|webm|mov|mp3|m4a|ogg|wav)$/i, SUB_EXT = /\.(vtt|srt|txt)$/i;
+async function loadRepoLessons(){
+  if(!gh) return;
+  let files;
+  try{
+    const r = await fetch("https://api.github.com/repos/" + gh.owner + "/" + gh.repo + "/contents/lessons");
+    if(!r.ok) return;
+    files = await r.json();
+    if(!Array.isArray(files)) return;
+  }catch(e){ return; }
+  const subs = {};
+  files.forEach(f => { if(SUB_EXT.test(f.name)) subs[f.name.replace(SUB_EXT, "")] = f.name; });
+  const items = files.filter(f => VIDEO_EXT.test(f.name)).map(f => {
+    const base = f.name.replace(VIDEO_EXT, "");
+    return {base, video: f.name, sub: subs[base] || null};
+  }).sort((a,b) => a.base.localeCompare(b.base, undefined, {numeric: true}));
+  if(!items.length) return;
+  const list = $("repoList"); list.innerHTML = "";
+  items.forEach(it => {
+    const b = document.createElement("button"); b.className = "libItem";
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = "▶ " + it.base;
+    const meta = document.createElement("span"); meta.className = "meta";
+    const best = (loadProg()["repo:" + it.base]) || null;
+    if(best){ const vals = Object.values(best); meta.textContent = vals.filter(v => v >= 80).length + "/" + vals.length + " done"; }
+    else meta.textContent = it.sub ? "" : "no subtitles";
+    b.append(nm, meta);
+    b.disabled = !it.sub;
+    b.addEventListener("click", ()=> openRepoLesson(it));
+    list.append(b);
+  });
+  $("repoLib").style.display = "block";
+}
+async function openRepoLesson(it){
+  stopRecording(true);
+  let txt = "";
+  try{ txt = await (await fetch("lessons/" + encodeURIComponent(it.sub))).text(); }
+  catch(e){ toast("Couldn't load the subtitles for this lesson."); return; }
+  currentDoc = null; localVideoFile = null;
+  videoName = "repo:" + it.base;
+  editMode = false; editingIdx = -1; $("btnEdit").classList.remove("on"); $("btnEdit").textContent = "✏️ Edit"; $("editTip").classList.remove("show");
+  let segs = null, off = 0;
+  try{
+    const c = JSON.parse(localStorage.getItem("shadowlab-segs:" + videoName) || "null");
+    if(c && Array.isArray(c.segs) && c.segs.length){
+      segs = c.segs.map(o => ({start: o.s == null ? null : o.s, end: o.e == null ? null : o.e, text: String(o.t || "")})).filter(s => s.text);
+      off = c.offset || 0;
+    }
+  }catch(e){}
+  if(!segs) segs = buildSegments(txt);
+  if(!segs.length){ toast("No sentences found in the subtitles."); return; }
+  subRaw = txt;
+  video.src = "lessons/" + encodeURIComponent(it.video);
+  $("playerPanel").style.display = "block";
+  segments = segs; idx = 0;
+  subOffset = off; $("offVal").textContent = (subOffset > 0 ? "+" : "") + subOffset.toFixed(2) + "s";
+  updateVisibility(); updateSaveBtn();
+  let start = 0; const sc = loadProg()[videoName] || {};
+  for(let i=0;i<segs.length;i++){ if((sc[i]||0) < 80){ start = i; break; } }
+  select(start);
+  toast("Loaded “" + it.base + "”.");
+}
+function secToVtt(t){
+  t = Math.max(0, t || 0);
+  const h = Math.floor(t/3600), m = Math.floor(t%3600/60), s = t%60;
+  return String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":" + s.toFixed(3).padStart(6,"0");
+}
+function exportVtt(){
+  if(!segments.length) return;
+  const lines = ["WEBVTT", ""];
+  segments.forEach(s => {
+    if(s.start == null || s.end == null) return;
+    lines.push(secToVtt(s.start + subOffset) + " --> " + secToVtt(s.end + subOffset));
+    lines.push(s.text); lines.push("");
+  });
+  if(lines.length <= 2){ toast("These sentences have no timings to export."); return; }
+  const base = videoName.replace(/^repo:/, "").replace(/\.[^.]+$/, "") || "subtitles";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\n")], {type: "text/vtt"}));
+  a.download = base + ".vtt"; document.body.append(a); a.click(); a.remove();
+  toast("Downloaded " + base + ".vtt — upload it to the repo's lessons/ folder to share the edits.");
+}
+
+/* ---------- IPA from ipa.json (CMU dictionary, General American) ---------- */
+let showIpa = false, ipaDict = null, ipaLoading = null;
+const LETTER_IPA = {a:"eɪ",b:"bi",c:"si",d:"di",e:"i",f:"ɛf",g:"dʒi",h:"eɪtʃ",i:"aɪ",j:"dʒeɪ",k:"keɪ",l:"ɛl",m:"ɛm",n:"ɛn",o:"oʊ",p:"pi",q:"kju",r:"ɑr",s:"ɛs",t:"ti",u:"ju",v:"vi",w:"ˈdʌbəlju",x:"ɛks",y:"waɪ",z:"zi"};
+function loadIpaDict(){
+  if(ipaDict) return Promise.resolve(ipaDict);
+  if(!ipaLoading){
+    ipaLoading = fetch("ipa.json").then(r => { if(!r.ok) throw new Error(); return r.json(); })
+      .then(d => { ipaDict = d; return d; })
+      .catch(() => { ipaLoading = null; throw new Error("missing"); });
+  }
+  return ipaLoading;
+}
+function ipaForWord(raw){
+  const w = raw.toLowerCase().replace(/[’]/g,"'").replace(/^[^a-z']+|[^a-z']+$/g, "");
+  if(!w) return null;
+  if(ipaDict[w]) return ipaDict[w];
+  if(w.endsWith("'s") && ipaDict[w.slice(0,-2)]){ const b = ipaDict[w.slice(0,-2)]; return b + (/[sʃzʒʈ]$/.test(b) ? "ɪz" : /[ptkfθ]$/.test(b) ? "s" : "z"); }
+  if(w.endsWith("s") && ipaDict[w.slice(0,-1)]){ const b = ipaDict[w.slice(0,-1)]; return b + (/[ptkfθ]$/.test(b) ? "s" : "z"); }
+  if(/^[A-Z]{2,5}$/.test(raw.replace(/[^A-Za-z]/g,"")) && raw === raw.toUpperCase()){
+    return w.split("").map(ch => LETTER_IPA[ch] || ch).join(" ");
+  }
+  return null;
+}
+function updateIpaBox(){
+  if(!segments[idx]) return;
+  if(showIpa && !ipaDict){
+    toast("Loading pronunciation dictionary…");
+    loadIpaDict().then(() => renderSentence(lastMarks)).catch(() => {
+      showIpa = false; $("btnIpa").classList.remove("on");
+      toast("IPA needs ipa.json in the repo (next to index.html).");
+    });
+    return;
+  }
+  renderSentence(lastMarks);
+}
+
 /* ---------- wiring ---------- */
 $("videoFile").addEventListener("change", e => {
   const f = e.target.files[0]; if(!f) return;
@@ -673,6 +830,7 @@ $("offPlus").addEventListener("click", ()=> setOffset(subOffset + 0.25));
 $("offCal").addEventListener("click", ()=>{ const s = segments[idx]; if(!s || s.start == null || !video.src){ toast("Select a timed sentence first."); return; } setOffset(video.currentTime - s.start); toast("Synced — sentence " + (idx+1) + " now starts here."); });
 $("btnHide").addEventListener("click", ()=>{ hideMode = !hideMode; $("btnHide").textContent = hideMode ? "👁 Show text" : "🙈 Hide text"; $("sentence").classList.toggle("blur", hideMode); });
 $("sentence").addEventListener("click", ()=> $("sentence").classList.remove("blur"));
+$("btnIpa").addEventListener("click", ()=>{ showIpa = !showIpa; $("btnIpa").classList.toggle("on", showIpa); updateIpaBox(); });
 $("btnGood").addEventListener("click", ()=>{ saveBest(idx, 100); renderList(); if($("autoNext").checked && idx < segments.length-1){ select(idx+1); playSegment(); } else toast("Marked ✓"); });
 $("btnDict").addEventListener("click", ()=>{ const r = $("dictRow"); r.classList.toggle("show"); if(r.classList.contains("show")) $("dictInput").focus(); });
 $("btnDictScore").addEventListener("click", ()=>{ presentScore($("dictInput").value, false); $("dictInput").value = ""; });
@@ -686,8 +844,10 @@ document.addEventListener("keydown", e => {
   else if(e.key.toLowerCase() === "s"){ e.preventDefault(); recActive ? stopRecording(false) : startRecording(); }
   else if(e.key.toLowerCase() === "m"){ e.preventDefault(); mergeSeg(idx); }
 });
+$("btnExport").addEventListener("click", exportVtt);
 updateVisibility();
 refreshLibrary();
+loadRepoLessons();
 </script>
 </body>
 </html>
