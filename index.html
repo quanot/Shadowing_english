@@ -130,7 +130,22 @@ audio{width:100%; margin-top:10px; height:36px}
   <button class="filebtn">🎬 Load video<input type="file" id="videoFile" accept="video/*,audio/*"></button>
   <button class="filebtn">📄 Subtitles (.srt / .vtt)<input type="file" id="subFile" accept=".srt,.vtt,.txt"></button>
   <button id="btnSave" style="display:none">💾 Save to library</button>
+  <button id="btnSync" title="Sync edits and scores through your GitHub repo">☁ Sync <span id="syncStatus" style="color:var(--muted); font-weight:400"></span></button>
 </header>
+<div class="panel" id="syncPanel" style="display:none; max-width:1240px; margin:14px auto 0; padding:14px 16px">
+  <div style="font-weight:700; margin-bottom:6px">Sync through your GitHub repo</div>
+  <div style="color:var(--muted); font-size:13px; margin-bottom:10px">
+    Paste a GitHub <b>fine-grained personal access token</b> with <b>Contents: Read and write</b> on this repository only.
+    Edits, sync offset and scores are then saved to <code>lessons/&lt;lesson&gt;.state.json</code> and picked up on every device.
+    The token is stored only in this browser.
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap">
+    <input id="ghTokenInput" type="password" placeholder="github_pat_…" autocomplete="off"
+      style="flex:1; min-width:220px; border:1px solid var(--line); border-radius:8px; padding:9px; font-family:inherit; font-size:14px; background:var(--surface); color:var(--ink)">
+    <button id="ghTokenSave" class="primary">Save token</button>
+    <button id="ghTokenClear">Remove</button>
+  </div>
+</div>
 
 <main>
   <section>
@@ -287,6 +302,7 @@ function scheduleSave(){
   }else if(videoName.indexOf("repo:") === 0){
     try{ localStorage.setItem("shadowlab-segs:" + videoName,
       JSON.stringify({segs: segments.map(s => ({s: s.start, e: s.end, t: s.text})), offset: subOffset})); }catch(e){}
+    if(ghToken()){ clearTimeout(ghTimer); ghTimer = setTimeout(ghSync, 2000); setSyncStatus("…"); }
   }
 }
 
@@ -301,6 +317,7 @@ function saveBest(i, score){
   try{ const p = loadProg(); p[videoName] = p[videoName] || {};
     if(!(i in p[videoName]) || score > p[videoName][i]) p[videoName][i] = score;
     localStorage.setItem("shadowlab", JSON.stringify(p)); }catch(e){}
+  if(videoName.indexOf("repo:") === 0) scheduleSave();
 }
 function bestOf(i){
   if(currentDoc) return (currentDoc.scores || {})[i];
@@ -309,6 +326,7 @@ function bestOf(i){
 function applyScoreRemap(fn){
   if(currentDoc){ currentDoc.scores = fn(currentDoc.scores || {}); scheduleSave(); return; }
   try{ const p = loadProg(); if(p[videoName]){ p[videoName] = fn(p[videoName]); localStorage.setItem("shadowlab", JSON.stringify(p)); } }catch(e){}
+  if(videoName.indexOf("repo:") === 0) scheduleSave();
 }
 
 /* ---------- subtitle parsing ---------- */
@@ -664,6 +682,62 @@ async function saveToLibrary(){
 }
 function updateSaveBtn(){ $("btnSave").style.display = (localVideoFile && segments.length && !currentDoc) ? "" : "none"; }
 
+/* ---------- GitHub sync (edits + scores + offset per lesson) ---------- */
+const GH_TOKEN_KEY = "shadowlab-gh-token";
+let ghTimer = null, ghChain = Promise.resolve(), remoteSha = null, remoteBase = null;
+function ghToken(){ try{ return localStorage.getItem(GH_TOKEN_KEY) || ""; }catch(e){ return ""; } }
+function setSyncStatus(s){ $("syncStatus").textContent = s; }
+function ghHeaders(){
+  const h = {"Accept": "application/vnd.github+json"};
+  const t = ghToken(); if(t) h["Authorization"] = "Bearer " + t;
+  return h;
+}
+function b64encode(str){ const bytes = new TextEncoder().encode(str); let bin = ""; for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]); return btoa(bin); }
+function b64decode(b64){ const bin = atob(b64.replace(/\s/g,"")); const bytes = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
+function ghStateUrl(base){ return "https://api.github.com/repos/" + gh.owner + "/" + gh.repo + "/contents/lessons/" + encodeURIComponent(base + ".state.json"); }
+async function ghGetState(base){
+  const r = await fetch(ghStateUrl(base), {headers: ghHeaders(), cache: "no-store"});
+  if(r.status === 404) return null;
+  if(!r.ok) throw new Error("GET " + r.status);
+  const j = await r.json();
+  return {data: JSON.parse(b64decode(j.content)), sha: j.sha};
+}
+async function ghPutState(base, data, sha){
+  const body = {message: "Shadow Lab: update " + base, content: b64encode(JSON.stringify(data))};
+  if(sha) body.sha = sha;
+  const r = await fetch(ghStateUrl(base), {method: "PUT", headers: Object.assign({"Content-Type": "application/json"}, ghHeaders()), body: JSON.stringify(body)});
+  if(!r.ok) throw new Error("PUT " + r.status);
+  return (await r.json()).content.sha;
+}
+function currentState(){
+  return {segs: segments.map(s => ({s: s.start, e: s.end, t: s.text})), offset: subOffset,
+    scores: (loadProg()[videoName] || {}), updatedAt: Date.now()};
+}
+function ghSync(){
+  if(!gh || !ghToken() || videoName.indexOf("repo:") !== 0) return;
+  const base = videoName.slice(5), data = currentState();
+  ghChain = ghChain.then(async () => {
+    setSyncStatus("saving…");
+    try{
+      try{ remoteSha = await ghPutState(base, data, remoteBase === base ? remoteSha : null); }
+      catch(e){
+        const cur = await ghGetState(base);          // sha conflict or unknown sha → refresh and retry once
+        remoteSha = await ghPutState(base, data, cur ? cur.sha : null);
+      }
+      remoteBase = base; setSyncStatus("synced");
+    }catch(e){
+      setSyncStatus("error"); toast("Sync failed (" + e.message + ") — check the token and its Contents permission.");
+    }
+  });
+}
+function applyRemoteState(st, base){
+  const segs = (st.segs || []).map(o => ({start: o.s == null ? null : o.s, end: o.e == null ? null : o.e, text: String(o.t || "")})).filter(s => s.text);
+  if(!segs.length) return null;
+  try{ const p = loadProg(); p["repo:" + base] = st.scores || {}; localStorage.setItem("shadowlab", JSON.stringify(p)); }catch(e){}
+  try{ localStorage.setItem("shadowlab-segs:repo:" + base, JSON.stringify({segs: st.segs, offset: st.offset || 0})); }catch(e){}
+  return {segs, offset: st.offset || 0};
+}
+
 /* ---------- lessons stored in the GitHub repo ---------- */
 const gh = (()=>{
   try{
@@ -714,13 +788,24 @@ async function openRepoLesson(it){
   videoName = "repo:" + it.base;
   editMode = false; editingIdx = -1; $("btnEdit").classList.remove("on"); $("btnEdit").textContent = "✏️ Edit"; $("editTip").classList.remove("show");
   let segs = null, off = 0;
-  try{
-    const c = JSON.parse(localStorage.getItem("shadowlab-segs:" + videoName) || "null");
-    if(c && Array.isArray(c.segs) && c.segs.length){
-      segs = c.segs.map(o => ({start: o.s == null ? null : o.s, end: o.e == null ? null : o.e, text: String(o.t || "")})).filter(s => s.text);
-      off = c.offset || 0;
-    }
-  }catch(e){}
+  remoteSha = null; remoteBase = null;
+  if(ghToken()){
+    setSyncStatus("loading…");
+    try{
+      const st = await ghGetState(it.base);
+      if(st){ const ap = applyRemoteState(st.data, it.base); if(ap){ segs = ap.segs; off = ap.offset; } remoteSha = st.sha; remoteBase = it.base; }
+      setSyncStatus("synced");
+    }catch(e){ setSyncStatus("offline"); }
+  }
+  if(!segs){
+    try{
+      const c = JSON.parse(localStorage.getItem("shadowlab-segs:" + videoName) || "null");
+      if(c && Array.isArray(c.segs) && c.segs.length){
+        segs = c.segs.map(o => ({start: o.s == null ? null : o.s, end: o.e == null ? null : o.e, text: String(o.t || "")})).filter(s => s.text);
+        off = c.offset || 0;
+      }
+    }catch(e){}
+  }
   if(!segs) segs = buildSegments(txt);
   if(!segs.length){ toast("No sentences found in the subtitles."); return; }
   subRaw = txt;
@@ -845,6 +930,24 @@ document.addEventListener("keydown", e => {
   else if(e.key.toLowerCase() === "m"){ e.preventDefault(); mergeSeg(idx); }
 });
 $("btnExport").addEventListener("click", exportVtt);
+$("btnSync").addEventListener("click", ()=>{
+  const p = $("syncPanel"); p.style.display = p.style.display === "none" ? "block" : "none";
+  if(p.style.display === "block"){ $("ghTokenInput").value = ghToken(); $("ghTokenInput").focus(); }
+});
+$("ghTokenSave").addEventListener("click", ()=>{
+  const t = $("ghTokenInput").value.trim();
+  if(!t){ toast("Paste a token first."); return; }
+  try{ localStorage.setItem(GH_TOKEN_KEY, t); }catch(e){}
+  $("syncPanel").style.display = "none"; setSyncStatus("on");
+  toast("Token saved on this device. Open a repo lesson to start syncing.");
+  if(videoName.indexOf("repo:") === 0) ghSync();
+});
+$("ghTokenClear").addEventListener("click", ()=>{
+  try{ localStorage.removeItem(GH_TOKEN_KEY); }catch(e){}
+  $("ghTokenInput").value = ""; $("syncPanel").style.display = "none"; setSyncStatus("off"); toast("Token removed.");
+});
+setSyncStatus(ghToken() ? "on" : "off");
+if(!gh) $("btnSync").style.display = "none";
 updateVisibility();
 refreshLibrary();
 loadRepoLessons();
