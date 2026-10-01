@@ -64,6 +64,14 @@ video{width:100%; max-width:100%; border-radius:8px; background:#000; display:bl
 .sentence .w{border-radius:5px; padding:1px 3px}
 .sentence .w.good{background:var(--good-bg); color:var(--good)}
 .sentence .w.bad{background:var(--bad-bg); color:var(--bad); text-decoration:underline dotted}
+.sentence .w.mid{background:#fff3cd; color:#8a6d00}
+@media (prefers-color-scheme: dark){ .sentence .w.mid{background:#3a3412; color:#f2d060} }
+.ph-good{color:var(--good)} .ph-mid{color:#c9a000} .ph-bad{color:var(--bad); font-weight:600}
+.azRow{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center}
+.azChip{border:1px solid var(--line); border-radius:999px; padding:5px 12px; font-size:13px; color:var(--muted)}
+.azChip b{color:var(--ink); margin-left:4px}
+.azChip.main{border-color:var(--primary); color:var(--primary)}
+.azChip.main b{color:var(--primary); font-size:15px}
 .wi{display:none; font-family:"Noto Sans","Segoe UI",Arial,sans-serif; font-weight:400; font-size:14px; letter-spacing:.01em; color:var(--muted); margin-top:3px; white-space:nowrap}
 .sentence.ipa .wi{display:block}
 .wi.unk{opacity:.45}
@@ -130,7 +138,7 @@ audio{width:100%; margin-top:10px; height:36px}
   <button class="filebtn">🎬 Load video<input type="file" id="videoFile" accept="video/*,audio/*"></button>
   <button class="filebtn">📄 Subtitles (.srt / .vtt)<input type="file" id="subFile" accept=".srt,.vtt,.txt"></button>
   <button id="btnSave" style="display:none">💾 Save to library</button>
-  <button id="btnSync" title="Sync edits and scores through your GitHub repo">☁ Sync <span id="syncStatus" style="color:var(--muted); font-weight:400"></span></button>
+  <button id="btnSync" title="Settings: GitHub sync and Azure pronunciation assessment">⚙️ Settings <span id="syncStatus" style="color:var(--muted); font-weight:400"></span></button>
 </header>
 <div class="panel" id="syncPanel" style="display:none; max-width:1240px; margin:14px auto 0; padding:14px 16px">
   <div style="font-weight:700; margin-bottom:6px">Sync through your GitHub repo</div>
@@ -144,6 +152,23 @@ audio{width:100%; margin-top:10px; height:36px}
       style="flex:1; min-width:220px; border:1px solid var(--line); border-radius:8px; padding:9px; font-family:inherit; font-size:14px; background:var(--surface); color:var(--ink)">
     <button id="ghTokenSave" class="primary">Save token</button>
     <button id="ghTokenClear">Remove</button>
+  </div>
+  <div style="font-weight:700; margin:18px 0 6px">Microphone mode</div>
+  <label style="display:flex; gap:8px; align-items:flex-start; font-size:14px">
+    <input type="checkbox" id="recogOnly" style="margin-top:4px">
+    <span><b>Recognition-only</b> (no recording). One listening session per sentence, scores automatically when you stop speaking. Fixes poor word detection on older iPads/iPhones where recording and recognition fight over the mic. Disables playback of your voice and Azure scoring while on. <span style="color:var(--muted)">Default: on for iPad.</span></span>
+  </label>
+  <div style="font-weight:700; margin:18px 0 6px">Azure pronunciation assessment (optional)</div>
+  <div style="color:var(--muted); font-size:13px; margin-bottom:10px">
+    Real phoneme-level scoring (Accuracy / Fluency / Completeness / Prosody). Create a free <b>Speech</b> resource on Azure (tier <b>Free F0</b>, 5 audio-hours/month), then paste <b>Key 1</b> and its <b>Region</b> (e.g. <code>southeastasia</code>). Stored only in this browser. Recordings over 30 s are trimmed.
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap">
+    <input id="azKeyInput" type="password" placeholder="Azure Speech key" autocomplete="off"
+      style="flex:2; min-width:200px; border:1px solid var(--line); border-radius:8px; padding:9px; font-family:inherit; font-size:14px; background:var(--surface); color:var(--ink)">
+    <input id="azRegionInput" type="text" placeholder="region, e.g. southeastasia" autocomplete="off"
+      style="flex:1; min-width:160px; border:1px solid var(--line); border-radius:8px; padding:9px; font-family:inherit; font-size:14px; background:var(--surface); color:var(--ink)">
+    <button id="azSave" class="primary">Save Azure</button>
+    <button id="azClear">Remove</button>
   </div>
 </div>
 
@@ -211,6 +236,7 @@ audio{width:100%; margin-top:10px; height:36px}
           <div id="scoreLabel" style="color:var(--muted)"></div>
         </div>
         <div class="heard" id="heard"></div>
+        <div class="azRow" id="azRow" style="display:none"></div>
         <audio id="myAudio" controls style="display:none"></audio>
       </div>
     </div>
@@ -570,11 +596,21 @@ $("speed").addEventListener("change", e => { video.playbackRate = parseFloat(e.t
 
 /* ---------- recording + recognition ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const IS_IPAD = /iPad/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function isRecogOnly(){
+  try{ const v = localStorage.getItem("shadowlab-recog-only"); if(v === "1") return true; if(v === "0") return false; }catch(e){}
+  return IS_IPAD;
+}
 async function startRecording(){
   video.pause(); finalHeard = ""; interimHeard = ""; chunks = [];
+  const recogOnly = isRecogOnly() && !!SR;
   let micErr = null;
-  try{ if(!micStream || !micStream.active) micStream = await navigator.mediaDevices.getUserMedia({audio:true}); }
-  catch(e){ micErr = e; micStream = null; }
+  if(!recogOnly){
+    try{ if(!micStream || !micStream.active) micStream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ micErr = e; micStream = null; }
+  }else{
+    if(micStream){ try{ micStream.getTracks().forEach(t => t.stop()); }catch(e){} micStream = null; }
+  }
   if(micErr && !SR){
     toast(micErr.name === "NotAllowedError" ? "Microphone permission denied — allow it in the browser's site settings (🔒 icon) and reload." : "Microphone error: " + micErr.name);
     return;
@@ -586,7 +622,8 @@ async function startRecording(){
       mediaRecorder.onstop = onRecorded; mediaRecorder.start(); }catch(e){ mediaRecorder = null; }
   }
   if(SR){
-    recognition = new SR(); recognition.lang = "en-US"; recognition.continuous = true; recognition.interimResults = true;
+    recognition = new SR(); recognition.lang = "en-US"; recognition.continuous = !recogOnly; recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
     recognition.onresult = ev => {
       interimHeard = "";
       for(let k = ev.resultIndex; k < ev.results.length; k++){ const r = ev.results[k]; if(r.isFinal) finalHeard += r[0].transcript + " "; else interimHeard += r[0].transcript + " "; }
@@ -596,8 +633,13 @@ async function startRecording(){
       if(ev.error === "not-allowed" || ev.error === "service-not-allowed"){ stopRecording(true); toast("Speech recognition blocked — allow the microphone for this site and reload."); }
       else if(ev.error !== "no-speech" && ev.error !== "aborted") $("liveHint").textContent = "Recognition error: " + ev.error;
     };
-    recognition.onend = () => { if(recActive){ try{ recognition.start(); }catch(e){} } };
+    recognition.onend = () => {
+      if(!recActive) return;
+      if(recogOnly) stopRecording(false);                 // one utterance → score it
+      else { try{ recognition.start(); }catch(e){} }      // keep listening until the user presses Stop
+    };
     try{ recognition.start(); }catch(e){}
+    if(recogOnly) $("liveHint").textContent = "Listening — say the sentence; it scores when you pause.";
   }else{
     $("liveHint").textContent = "This browser has no speech recognition — recording only (use ⌨️ Dictate to score).";
   }
@@ -631,8 +673,13 @@ function presentScore(heard, withAudio){
   }else{
     big.textContent = "—"; big.className = "scoreBig"; $("scoreLabel").textContent = "Listen to your recording and compare by ear."; $("heard").textContent = "";
   }
-  if(withAudio && chunks.length){ const a = $("myAudio"); a.src = URL.createObjectURL(new Blob(chunks, {type: chunks[0].type || "audio/webm"})); a.style.display = "block"; }
-  else $("myAudio").style.display = "none";
+  if(withAudio && chunks.length){
+    const blob = new Blob(chunks, {type: chunks[0].type || "audio/webm"});
+    const a = $("myAudio"); a.src = URL.createObjectURL(blob); a.style.display = "block";
+    $("azRow").style.display = "none";
+    if(azEnabled()) runAzure(blob);
+  }
+  else { $("myAudio").style.display = "none"; $("azRow").style.display = "none"; }
   $("liveHint").textContent = "";
 }
 
@@ -884,6 +931,158 @@ function updateIpaBox(){
   renderSentence(lastMarks);
 }
 
+/* ---------- Azure pronunciation assessment (optional) ---------- */
+const AZ_KEY = "shadowlab-az-key", AZ_REGION = "shadowlab-az-region";
+let azBusy = false;
+function azCfg(){ try{ return {key: (localStorage.getItem(AZ_KEY)||"").trim(), region: (localStorage.getItem(AZ_REGION)||"").trim().toLowerCase()}; }catch(e){ return {key:"", region:""}; } }
+function azEnabled(){ const c = azCfg(); return !!(c.key && c.region); }
+
+async function blobToWav16k(blob){
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const ab = await blob.arrayBuffer();
+  const ctx = new AC();
+  const decoded = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+  if(ctx.close) ctx.close();
+  const srcLen = Math.min(decoded.length, Math.floor(decoded.sampleRate * 30));   // Azure limit: 30 s
+  const outLen = Math.max(1, Math.ceil(srcLen * 16000 / decoded.sampleRate));
+  const off = new OAC(1, outLen, 16000);
+  let buf = decoded;
+  if(srcLen < decoded.length){
+    buf = off.createBuffer(decoded.numberOfChannels, srcLen, decoded.sampleRate);
+    for(let c = 0; c < decoded.numberOfChannels; c++) buf.copyToChannel(decoded.getChannelData(c).slice(0, srcLen), c);
+  }
+  const src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start(0);
+  const rendered = await off.startRendering();
+  const pcm = rendered.getChannelData(0);
+  const wav = new ArrayBuffer(44 + pcm.length * 2), v = new DataView(wav);
+  const ws = (o, s) => { for(let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
+  ws(0,"RIFF"); v.setUint32(4, 36 + pcm.length*2, true); ws(8,"WAVE"); ws(12,"fmt "); v.setUint32(16,16,true);
+  v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,16000,true); v.setUint32(28,32000,true);
+  v.setUint16(32,2,true); v.setUint16(34,16,true); ws(36,"data"); v.setUint32(40, pcm.length*2, true);
+  for(let i=0, o=44; i<pcm.length; i++, o+=2){ const s = Math.max(-1, Math.min(1, pcm[i])); v.setInt16(o, s < 0 ? s*0x8000 : s*0x7FFF, true); }
+  return wav;
+}
+function azParams(refText){
+  return {ReferenceText: refText, GradingSystem: "HundredMark", Granularity: "Phoneme", Dimension: "Comprehensive",
+    EnableMiscue: true, PhonemeAlphabet: "IPA", EnableProsodyAssessment: true};
+}
+async function azAssessRest(wav, refText){
+  const {key, region} = azCfg();
+  const url = "https://" + region + ".stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US&format=detailed";
+  const r = await fetch(url, {method: "POST", body: wav, headers: {
+    "Ocp-Apim-Subscription-Key": key, "Accept": "application/json",
+    "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+    "Pronunciation-Assessment": b64encode(JSON.stringify(azParams(refText)))}});
+  if(r.status === 401 || r.status === 403) throw new Error("Azure rejected the key/region (" + r.status + ")");
+  if(r.status === 429) throw new Error("Azure quota exceeded (429)");
+  if(!r.ok) throw new Error("Azure HTTP " + r.status);
+  const j = await r.json();
+  if(j.RecognitionStatus !== "Success" || !j.NBest || !j.NBest[0]) throw new Error("Azure: " + (j.RecognitionStatus || "no speech recognized"));
+  return j.NBest[0];
+}
+function loadScript(src){
+  return new Promise((res, rej) => { if(window.SpeechSDK) return res(); const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("SDK load failed")); document.head.append(s); });
+}
+async function azAssessSdk(wav, refText){
+  await loadScript("https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@1/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js");
+  const S = window.SpeechSDK, {key, region} = azCfg();
+  const sc = S.SpeechConfig.fromSubscription(key, region); sc.speechRecognitionLanguage = "en-US";
+  const push = S.AudioInputStream.createPushStream(S.AudioStreamFormat.getWaveFormatPCM(16000, 16, 1));
+  push.write(wav.slice(44)); push.close();
+  const rec = new S.SpeechRecognizer(sc, S.AudioConfig.fromStreamInput(push));
+  const pa = new S.PronunciationAssessmentConfig(refText, S.PronunciationAssessmentGradingSystem.HundredMark, S.PronunciationAssessmentGranularity.Phoneme, true);
+  pa.phonemeAlphabet = "IPA"; pa.enableProsodyAssessment = true; pa.applyTo(rec);
+  return new Promise((res, rej) => {
+    rec.recognizeOnceAsync(result => {
+      try{
+        const j = JSON.parse(result.properties.getProperty(S.PropertyId.SpeechServiceResponse_JsonResult) || "{}");
+        rec.close();
+        if(j.NBest && j.NBest[0]) res(j.NBest[0]); else rej(new Error(result.errorDetails || "Azure: no speech recognized"));
+      }catch(e){ rec.close(); rej(e); }
+    }, err => { rec.close(); rej(new Error(String(err))); });
+  });
+}
+async function azAssess(blob, refText){
+  const wav = await blobToWav16k(blob);
+  try{ return await azAssessRest(wav, refText); }
+  catch(e){
+    if(e instanceof TypeError) return await azAssessSdk(wav, refText);   // network/CORS blocked → SDK over WebSocket
+    throw e;
+  }
+}
+function azChip(label, val, main){
+  const c = document.createElement("span"); c.className = "azChip" + (main ? " main" : "");
+  c.textContent = label; const b = document.createElement("b"); b.textContent = (val == null ? "–" : Math.round(val)); c.append(b); return c;
+}
+function normAz(s){ return s.toLowerCase().replace(/[’]/g,"'").replace(/[^a-z0-9']+/g, ""); }
+function renderAzure(nb){
+  const pa = nb.PronunciationAssessment || {};
+  const row = $("azRow"); row.innerHTML = ""; row.style.display = "flex";
+  row.append(azChip("Pronunciation", pa.PronScore, true), azChip("Accuracy", pa.AccuracyScore), azChip("Fluency", pa.FluencyScore), azChip("Completeness", pa.CompletenessScore));
+  if(pa.ProsodyScore != null) row.append(azChip("Prosody", pa.ProsodyScore));
+
+  const words = (nb.Words || []).filter(w => !(w.PronunciationAssessment && w.PronunciationAssessment.ErrorType === "Insertion"));
+  const blocks = Array.from(document.querySelectorAll("#sentence .wb")).filter(b => /[a-z0-9]/i.test(b.querySelector(".w").textContent));
+  let wi = 0;
+  blocks.forEach(b => {
+    const wEl = b.querySelector(".w");
+    const target = normAz(wEl.textContent);
+    let acc = null, omitted = false, phon = [], got = "";
+    while(wi < words.length){
+      const w = words[wi], nw = normAz(w.Word || "");
+      if(got && !(target.startsWith(got + nw))) break;
+      if(!got && !target.startsWith(nw) && nw !== target) { if(!phon.length){ wi++; continue; } break; }
+      const a = w.PronunciationAssessment ? w.PronunciationAssessment.AccuracyScore : null;
+      if(w.PronunciationAssessment && w.PronunciationAssessment.ErrorType === "Omission") omitted = true;
+      if(a != null) acc = acc == null ? a : Math.min(acc, a);
+      (w.Phonemes || []).forEach(p => phon.push(p));
+      got += nw; wi++;
+      if(got === target) break;
+    }
+    if(acc == null && !omitted && !phon.length) return;
+    wEl.classList.remove("good","bad","mid");
+    wEl.classList.add(omitted || (acc != null && acc < 60) ? "bad" : (acc != null && acc < 80) ? "mid" : "good");
+    if(acc != null) wEl.title = "Accuracy " + Math.round(acc);
+    let ip = b.querySelector(".wi");
+    if(!ip){ ip = document.createElement("span"); ip.className = "wi"; b.append(ip); }
+    ip.innerHTML = ""; ip.classList.remove("unk");
+    if(omitted && !phon.length){ ip.textContent = "missed"; ip.classList.add("unk"); return; }
+    ip.append(document.createTextNode("/"));
+    phon.forEach(p => {
+      const s = document.createElement("span");
+      const a = p.PronunciationAssessment ? p.PronunciationAssessment.AccuracyScore : 100;
+      s.className = a < 60 ? "ph-bad" : a < 80 ? "ph-mid" : "ph-good";
+      s.textContent = p.Phoneme; s.title = Math.round(a); ip.append(s);
+    });
+    ip.append(document.createTextNode("/"));
+  });
+  $("sentence").classList.add("ipa");
+}
+async function runAzure(blob){
+  if(!azEnabled() || !blob || azBusy) return;
+  azBusy = true;
+  const row = $("azRow"); row.style.display = "flex"; row.innerHTML = "";
+  const st = document.createElement("span"); st.className = "azChip"; st.textContent = "Azure: assessing…"; row.append(st);
+  const myIdx = idx, refText = segments[idx].text;
+  try{
+    const nb = await azAssess(blob, refText);
+    if(myIdx !== idx) return;            // user moved on
+    renderAzure(nb);
+    const pa = nb.PronunciationAssessment || {};
+    if(pa.PronScore != null){
+      const big = $("scoreBig"); const sc = Math.round(pa.PronScore);
+      big.textContent = sc + "%"; big.className = "scoreBig " + (sc>=80 ? "good" : sc>=60 ? "mid" : "bad");
+      $("scoreLabel").textContent = "Azure pronunciation score";
+      saveBest(myIdx, sc); renderList();
+    }
+  }catch(e){
+    row.innerHTML = ""; const er = document.createElement("span"); er.className = "azChip"; er.style.color = "var(--bad)";
+    er.textContent = e.message || "Azure assessment failed"; row.append(er);
+  }
+  azBusy = false;
+}
+
 /* ---------- wiring ---------- */
 $("videoFile").addEventListener("change", e => {
   const f = e.target.files[0]; if(!f) return;
@@ -940,7 +1139,26 @@ document.addEventListener("keydown", e => {
 $("btnExport").addEventListener("click", exportVtt);
 $("btnSync").addEventListener("click", ()=>{
   const p = $("syncPanel"); p.style.display = p.style.display === "none" ? "block" : "none";
-  if(p.style.display === "block"){ $("ghTokenInput").value = ghToken(); $("ghTokenInput").focus(); }
+  if(p.style.display === "block"){
+    $("ghTokenInput").value = ghToken(); const c = azCfg(); $("azKeyInput").value = c.key; $("azRegionInput").value = c.region;
+    $("ghTokenInput").focus();
+  }
+});
+$("recogOnly").checked = isRecogOnly();
+$("recogOnly").addEventListener("change", e => {
+  try{ localStorage.setItem("shadowlab-recog-only", e.target.checked ? "1" : "0"); }catch(er){}
+  toast(e.target.checked ? "Recognition-only mode on." : "Recording + recognition mode on.");
+});
+$("azSave").addEventListener("click", ()=>{
+  const k = $("azKeyInput").value.trim(), r = $("azRegionInput").value.trim().toLowerCase();
+  if(!k || !r){ toast("Enter both the Azure key and its region."); return; }
+  try{ localStorage.setItem(AZ_KEY, k); localStorage.setItem(AZ_REGION, r); }catch(e){}
+  $("syncPanel").style.display = "none";
+  toast("Azure saved — press Speak; the recording is assessed after you stop.");
+});
+$("azClear").addEventListener("click", ()=>{
+  try{ localStorage.removeItem(AZ_KEY); localStorage.removeItem(AZ_REGION); }catch(e){}
+  $("azKeyInput").value = ""; $("azRegionInput").value = ""; toast("Azure removed.");
 });
 $("ghTokenSave").addEventListener("click", ()=>{
   const t = $("ghTokenInput").value.trim();
@@ -954,10 +1172,10 @@ $("ghTokenClear").addEventListener("click", ()=>{
   try{ localStorage.removeItem(GH_TOKEN_KEY); }catch(e){}
   $("ghTokenInput").value = ""; $("syncPanel").style.display = "none"; setSyncStatus("off"); toast("Token removed.");
 });
-setSyncStatus(ghToken() ? "on" : "off");
+setSyncStatus(gh ? (ghToken() ? "☁ on" : "☁ off") : "");
 try{ $("strict").checked = localStorage.getItem("shadowlab-strict") === "1"; }catch(e){}
 $("strict").addEventListener("change", e => { try{ localStorage.setItem("shadowlab-strict", e.target.checked ? "1" : "0"); }catch(er){} toast(e.target.checked ? "Strict scoring on — exact words only." : "Lenient scoring on."); });
-if(!gh) $("btnSync").style.display = "none";
+
 updateVisibility();
 refreshLibrary();
 loadRepoLessons();
